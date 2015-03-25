@@ -24,6 +24,7 @@
 
 #define _XOPEN_SOURCE 500
 #define _LARGEFILE64_SOURCE
+#define _GNU_SOURCE
 
 #ifdef HAVE_CONFIG_H
 #include <config.h>
@@ -40,6 +41,7 @@
 #include <sys/types.h>
 #include <fcntl.h>
 #include <assert.h>
+#include <sys/mman.h>
 
 #include "ddfslib.h"
 #include "ddfschkrep.h"
@@ -375,6 +377,14 @@ int ddfs_hash_blocks(struct bit_array* ba, long long int ba_start, int (*bb_proc
 	return 0;
 }
 
+void ddfs_chk_preload_node(nodeidx node_idx, int num_nodes)
+{
+    //printf("Preloading %d nodes starting at index position %lld\n", num_nodes, node_idx);
+
+    long long node_offset=(node_idx*ddfs->c_node_size) & (0-getpagesize());
+    int numpages=1 + ((num_nodes*ddfs->c_node_size) / getpagesize());
+    madvise(ddfs->nodes+node_offset, getpagesize() * numpages, MADV_WILLNEED);
+}
 
 /**
  * check the index for errors
@@ -397,16 +407,24 @@ long long int ddfs_chk_index(struct bit_array *ba_found_in_index, struct bit_arr
 
     long long int start=now();
     long long int last=start;
+
+    if(!ddfs->lock_index)
+	ddfs_chk_preload_node(0, FSCK_INDEX_PRELOAD * 1.5);
+
     for (node_idx=0; node_idx<ddfs->c_node_count; node_idx++)
     {
         unsigned char *node=ddfs->nodes+(node_idx*ddfs->c_node_size);
         unsigned char *hash=node+ddfs->c_addr_size;
         blockaddr addr=ddfs_get_node_addr(node);
 
+
+	if(!ddfs->lock_index && !(node_idx%FSCK_INDEX_PRELOAD))
+	    ddfs_chk_preload_node(node_idx+(FSCK_INDEX_PRELOAD/2), FSCK_INDEX_PRELOAD);
+
         if (progress_flag && now()-last>NOW_PER_SEC)
         {	// display progress
 			last=now();
-			printf("check index node %.1f%% in %llds\r", node_idx*100.0/ddfs->c_node_count, (last-start)/NOW_PER_SEC);
+			printf("check index node %.1f%% in %llds lock=%d\r", node_idx*100.0/ddfs->c_node_count, (last-start)/NOW_PER_SEC, ddfs->lock_index);
 			fflush(stdout);
         }
 
@@ -572,8 +590,8 @@ struct bit_array *ddfs_chk_te_block_found;
 
 int ddfs_chk_tree_explore(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf)
 {
-    int res, len;
-    unsigned char node[NODE_SIZE];
+    int res, len, pcount;
+    unsigned char node[NODE_SIZE*NODE_FSCK_PREFETCH];
     unsigned char *hash=node+ddfs->c_addr_size;
     blockaddr addr;
     uint64_t size;
@@ -626,9 +644,20 @@ int ddfs_chk_tree_explore(const char *fpath, const struct stat *sb, int typeflag
     int lost_block=0;
     long long int i=0;
 
-    len=fread(node, 1, ddfs->c_node_size, file);
+    len=fread(node, 1, ddfs->c_node_size*NODE_FSCK_PREFETCH, file);
+    pcount=len/ddfs->c_node_size;
+    len=len%ddfs->c_node_size;
 
-    while (len==ddfs->c_node_size)
+    if (!ddfs->lock_index)
+    {
+	int pnum=0;
+	while(pnum<pcount) {
+	    ddfs_chk_preload_node(ddfs_hash2idx(node+(pnum*ddfs->c_node_size)+ddfs->c_addr_size), 1);
+	    pnum++;
+	}
+    }
+
+    while (pcount)
     {
         addr=ddfs_get_node_addr(node);
         if (ddfs_chk_te_block_found) bit_array_set(ddfs_chk_te_block_found, addr);
@@ -658,7 +687,11 @@ int ddfs_chk_tree_explore(const char *fpath, const struct stat *sb, int typeflag
         }
         else
         {
-            ddfs_search_hash(hash, &addr);
+	    nodeidx node_idx;
+            node_idx = ddfs_search_hash(hash, &addr);
+
+	    //printf("Hash found in node index position %lld\n", node_idx);
+
             if (baddr!=addr)
             {
                 te_errors++;
@@ -671,7 +704,22 @@ int ddfs_chk_tree_explore(const char *fpath, const struct stat *sb, int typeflag
 
         }
         i++;
-        len=fread(node, 1, ddfs->c_node_size, file);
+
+	if(pcount>1)
+	    memmove(node, node+ddfs->c_node_size, ddfs->c_node_size*(pcount-1));
+
+	if(pcount == NODE_FSCK_PREFETCH)
+	{
+	    len=fread(node+(ddfs->c_node_size*(pcount-1)), 1, ddfs->c_node_size, file);
+	    if(len != ddfs->c_node_size)
+		pcount--;
+	    else
+	        ddfs_chk_preload_node(ddfs_hash2idx(node+((pcount-1)*ddfs->c_node_size)+ddfs->c_addr_size), 1);
+	}
+	else
+	{
+	    pcount--;
+	}
     }
 
     if (len!=0)
