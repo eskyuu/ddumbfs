@@ -1,0 +1,15 @@
+- should re-add pre_load() of index before to lock() some mutex
+
+- should reverse bytes order for address inside node, to be able to 
+  test first byte before to test all the following to know if it is empty
+  could speed up 0.0001% process :-)
+
+
+DONE :
+
+- now xstat->h (file header) is saved only on truncate and on file close
+  I should save it at regular interval or always to reduce problems 
+  when shutdown unexpectedly.
+
+
+

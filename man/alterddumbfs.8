@@ -1,0 +1,243 @@
+.TH "ALTERDDUMBFS" "8" "January 11, 2013" "1.0" "ddumbfs"
+.SH NAME
+alterddumbfs \- command line tools to create anomalies in an offline ddumbfs filesystem, for testing only
+.
+.nr rst2man-indent-level 0
+.
+.de1 rstReportMargin
+\\$1 \\n[an-margin]
+level \\n[rst2man-indent-level]
+level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
+-
+\\n[rst2man-indent0]
+\\n[rst2man-indent1]
+\\n[rst2man-indent2]
+..
+.de1 INDENT
+.\" .rstReportMargin pre:
+. RS \\$1
+. nr rst2man-indent\\n[rst2man-indent-level] \\n[an-margin]
+. nr rst2man-indent-level +1
+.\" .rstReportMargin post:
+..
+.de UNINDENT
+. RE
+.\" indent \\n[an-margin]
+.\" old: \\n[rst2man-indent\\n[rst2man-indent-level]]
+.nr rst2man-indent-level -1
+.\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
+.in \\n[rst2man-indent\\n[rst2man-indent-level]]u
+..
+.\" Man page generated from reStructeredText.
+.
+.SH SYNOPSIS
+.sp
+\fBalterddumbfs\fP [options] \fI<parent\-directory>\fP
+.SH DESCRIPTION
+.sp
+\fBalterddumbfs\fP create anomalies in an offline ddumbfs filesystem,
+\fBfor testing only\fP.
+.sp
+The \fIparent\-directory\fP is the directory containing the \fIddfs.cfg\fP file and
+\fIddfsroot\fP directory.
+.SH OPTIONS
+.INDENT 0.0
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-v, \-\-verbose
+be more verbose and display progress
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-l, \-\-lock_index
+lock index into memory (increase speed)
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-f, \-\-file
+create funny file
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-n, \-\-random\-seed=<VAL>
+initialize random seed
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-i, \-\-index=<NUM>
+alter index
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-s, \-\-swap\-consecutive=<NUM>
+swap non empty consecutive nodes in the index
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-S, \-\-swap\-random=<NUM>
+swap non empty random nodes in the index
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-r, \-\-reset\-node=<NUM>
+reset to zero non empty nodes in the index
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-d, \-\-duplicate\-node=<NUM>
+duplicate non empty nodes in empty random place
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-p, \-\-duplicate\-inplace=<NUM>
+duplicate non empty nodes just after itself
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-a, \-\-swap\-addr=<NUM>
+exchange addresses of two non empty nodes in the index
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-c, \-\-corrupt\-node=<NUM>
+write one random byte anywhere in the index
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-u, \-\-unexpected_shutdown
+simulate a crash or a powercut
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-I, \-\-index\-ops=<OPS>
+.INDENT 7.0
+.INDENT 3.5
+alter index file
+.INDENT 0.0
+.INDENT 3.5
+.INDENT 0.0
+.IP \(bu 2
+OPS = delete: delete the file
+.IP \(bu 2
+OPS = magic: put MAGIC at blank
+.IP \(bu 2
+OPS = truncate: truncate the file at mid size
+.IP \(bu 2
+OPS = empty: truncate file
+.UNINDENT
+.UNINDENT
+.UNINDENT
+.UNINDENT
+.UNINDENT
+.INDENT 7.0
+.TP
+.B \-B, \-\-block\-ops=<OPS>
+alter block file, see \fB\-\-index\-ops\fP for possible operations
+.UNINDENT
+.UNINDENT
+.SH EXAMPLE
+.sp
+For example, to test if \fBfsckddumbfs\fP will detect and correct addresses
+the swap of some addresses inside the index:
+.sp
+.nf
+.ft C
+# umount /l0/ddumbfs/
+# alterddumbfs \-a 2 /l0/ddumbfs/
+# fsckddumbfs \-C /l0/ddumbfs
+use asynchronous io
+root directory: /l0/ddumbfs/ddfsroot
+blockfile: /l0/ddumbfs/ddfsblocks
+indexfile: /l0/ddumbfs/ddfsidx
+== Check index
+== Checked 983 nodes in 0.0s
+== Check block hash
+== Checked 12 blocks in 0.0s
+== Check unmatching 2 block
+== Checked 2 unmatching blocks in 0.0s
+== Read files
+== Read 1 files in 0.0s
+== Summary
+Used blocks          :       12
+Free blocks          :      148
+Index errors         :        0 OK
+Index blocks         :       12
+Index blocks dup     :        0 OK
+Block errors         :        2 ERR
+Files                :        1
+Files errors         :        2 ERR
+Files blocks         :       12
+Files lost blocks    :        0 OK
+Tested hashes        :        0
+Wrong hashes         :        0 OK
+Diff index vs files  :        0 OK
+Diff blocks vs files :        0 OK
+Filesystem status    : ERROR
+# fsckddumbfs \-n /l0/ddumbfs
+use asynchronous io
+root directory: /l0/ddumbfs/ddfsroot
+blockfile: /l0/ddumbfs/ddfsblocks
+indexfile: /l0/ddumbfs/ddfsidx
+02:40:45 INF Repair node order, fixed 0 errors.
+02:40:45 INF Update index from files.
+02:40:45 INF calculate hash for block addr=2
+02:40:45 INF calculate hash for block addr=5
+02:40:45 INF Read 1 files in 0.0s.
+02:40:45 INF 12 blocks used in files.
+02:40:45 INF 2 blocks have been added to index.
+02:40:45 INF ddfs_load_usedblocks
+02:40:45 INF 12 blocks used in nodes.
+02:40:45 INF 2 suspect blocks in nodes.
+02:40:45 INF Resolve Index conflicts.
+02:40:45 INF 2 nodes fixed.
+02:40:45 INF Fix files.
+02:40:45 INF Fixed:0  Corrupted:0  Total:1 files in 0.0s.
+02:40:45 INF Deleted 0 useless nodes.
+02:40:45 INF blocks in use: 12   blocks free: 148.
+# fsckddumbfs \-C /l0/ddumbfs
+use asynchronous io
+root directory: /l0/ddumbfs/ddfsroot
+blockfile: /l0/ddumbfs/ddfsblocks
+indexfile: /l0/ddumbfs/ddfsidx
+== Check index
+== Checked 983 nodes in 0.0s
+== Check block hash
+== Checked 12 blocks in 0.0s
+== Check unmatching 0 block
+== Checked 0 unmatching blocks in 0.0s
+== Read files
+== Read 1 files in 0.0s
+== Check \(aqunexpected shutdown\(aq blocks: 0.
+== Summary
+Used blocks          :       12
+Free blocks          :      148
+Index errors         :        0 OK
+Index blocks         :       12
+Index blocks dup     :        0 OK
+Block errors         :        0 OK
+Files                :        1
+Files errors         :        0 OK
+Files blocks         :       12
+Files lost blocks    :        0 OK
+Tested hashes        :        0
+Wrong hashes         :        0 OK
+Diff index vs files  :        0 OK
+.ft P
+.fi
+.SH SEE ALSO
+.sp
+\fIddumbfs(1)\fP, \fIfsckddumbfs(8)\fP
+.SH AUTHOR
+.sp
+Alain Spineux <\fI\%alain.spineux@gmail.com\fP>
+.SH AUTHOR
+Alain Spineux
+.SH COPYRIGHT
+2011, Alain Spineux
+.\" Generated by docutils manpage writer.
+.\" 
+.

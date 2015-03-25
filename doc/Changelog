@@ -1,0 +1,325 @@
+
+
+2013-01-12 ddumbfs-1.1
+
+    fsckddumbfs:
+      - option pack to pack the block file and be able to downsize the filesystem using migrateddumbfs
+
+    all:
+        - added .deb generation
+        - improved .rpm generation
+
+    ddumbfs:
+        - direct_io default is to be enable when block file is a block device
+        - no more align option
+        
+    ddfslib:
+        - bug: ddfs_init() was not repairing the blockfile MAGIC
+
+    bits:
+     - optimized and added more testing for quick_functions
+        
+
+2012-11-23 ddumbfs-1.0b21
+
+    all:
+      replaced "struct ddfs_ctx ddfs" by "struct ddfs_ctx *ddfs" to be able to 
+      mount multiple filesystem, required by new migrateddumbfs 
+      
+    migrateddumbfs:
+      - new tools to resize ddumbfs (migrate and existing fs into an fs of different size)
+        
+    ddumbfs:
+      - don't start if .autofsck cannot be locked.
+
+    fsckddumbfs:
+      - bug: fsckddumbfs was unable to recreate an index.
+
+
+2012-11-21 ddumbfs-1.0b20
+
+    all:
+      - changed logging to append mode to avoid a rollout every time ddumbfs or 
+      any ddfs utils is started and finnaly loose log.  
+      - don't check for libaio anymore in autoconf
+      
+    ddumbfs:
+      - added ddumb_statistic.inode_counter and display ddumb_statistic.fh_counter
+
+2012-11-17 ddumbfs-1.0b19
+    
+    bits:
+      - added bit_array_cmp_count() 
+
+    ddumbfs:
+      - use bit_array_cmp_count() to reduce complexity 
+
+    fsckddumbfs:
+      - all block reading and hashing that were using libaio are no using 
+      multi-threading to improve performance.  
+
+2012-11-07 ddumbfs-1.0b18
+    
+    ddumbfs:
+      - bug: ddfs_save_usedblocks() was not SYNCING bfile and ifile, now it does
+      - added c_auto_buffer_flush=60s to force flush of pending buffer and 
+        c_auto_sync=120s to force sync of bfile and ifile. Can be tuned in ddfs.cfg
+      
+    fsckddumbfs:
+      - bug fix that generate SIGSEV
+      
+
+2012-11-05 ddumbfs-1.0b17
+
+    ddumbfs:
+      - now ddumb_fsync() sync the bfile and the ifile too
+
+    queryddumbfs:
+      - added option "--force" to run even when filesystem is already mounted
+      - it was not checking reslut of ddfs_read_full_block(), now it does
+
+
+2012-10-31 ddumbfs-1.0b16
+
+    ddumbfs:
+      - lot of cosmetic change and renamed some variables and function 
+      - fixed a bug in block_wait() 
+
+2012-10-29 ddumbfs-1.0b15
+
+    all:
+      - close and closer to the 1.0 :-)
+
+    ddumbfs:
+      - bug: Access to file in .ddumbfs was locking the thread because these
+      file dont have fh->lock and ddumbfs_read() was loccking fh->lockfor any
+      file
+
+
+2012-10-26 ddumbfs-1.0b14
+
+    all:
+      - in Makefile.am, replaced AM_LDFLAGS into LDADD, because of ubuntu 12.04
+
+    ddumbfs:
+      - flush "long living" buffer at regular interval 
+      
+    ddfschkrep:
+      - check only regular files
+
+    fsckddumbfs:
+      - check only regular files
+
+
+2011-11-21 ddumbfs-1.0b13
+
+    all:
+      - use bits mask and bits shift instead of mod, div and mul to get gap,
+      and block_boundary from an offset.
+    
+    ddfslib      
+      - improved ddfs_convert_addr() and ddfs_get_node_addr()
+
+    ddumbfs:
+      - the lock_index was not working because mlock() was done before
+      the fork() done in fuse_main(). Now mlock is done in ddumbfs_init() 
+
+2011-11-12 ddumbfs-1.0b12
+
+    ddumbfs:
+      - handle the unlikely race condition on block write using a list of block 
+      being written. Any read check this list and must wait if the block is in the list
+      - delayed error was wrongly reported 
+      
+    testddumbfs:
+      - added operation 'B' to test for the 'race condition' above but this is 
+      useless because FUSE cache the data and never issue a read.
+      
+      
+2011-11-00 ddumbfs-1.0b11
+    ddumbfs:
+      - write requests are queued in a list and writers pick them up.
+      - some tuning when waiting for a "REANDONLY" fh to be written (in _ddumb_write()
+      and do_truncate())
+
+    !! released soon, mostly an alpha  
+
+2011-10-25 ddumbfs-1.0b10
+
+    mkddumbfs:
+      - bug: 128K block is the default
+      - bug: c_addr_size was wrongly calculated, 1 bit too small and then
+      because of the use of octet, 1/8 wrong !
+      
+    queryddumbfs:
+      - NEW tool to query and search the ddumbfs index and files about nodes, 
+      hash and blocks.
+
+2011-10-25 ddumbfs-1.0b9
+    xlog:
+      - was rolling out twice at startup when not in "append" mode
+
+    ddumbfs:
+      - removed xstat->ref because was xstat->fhs_n similar 
+      - bug: in writer_pool_handle() "fh_dst->pool_loaded=1" moved before xstat_subscribe() 
+      - added option "reclaim" to handle auto reclaim when disk usage > reclaim%
+       
+
+2011-10-23 ddumbfs-1.0b8
+    xlog:
+      - added filename alias, to handles file like 'stderr' 
+      - error handling
+    ddumbfs:
+      - close file after read: "/proc/cpuinfo"
+      - reclaim() handle non regular file like (sockets, fifos, block
+      & char devices) better
+      - symblink set the uid and gid appropriately
+      - pjd succeed 
+      - added option [no]fuse_default that insert: "-ouse_ino,readdir_ino,
+         ...default_permissions,allow_other,big_writes,max_read=131072,
+         ...max_write=131072,negative_timeout=0,entry_timeout=0,attr_timeout=0
+      - "fuse_default" can be over-written
+      - bug in xstat_compare() was generating "xstat_release: xstat not found, continue"
+      use long long int insead of int
+      - complete rewrite of the writer pool. Writers are in a list, the requester
+      iterates the list until a free writer is found, upload data in the ddumb_fh
+      and signal the thread.
+
+    ddfslib:
+      - close file after read: "ddfs.cfg"
+    mkddumbfs:
+      - default block size is now 128k
+    cpddumbfs:
+      - added some code to "download" file even if bad block are found.
+      
+2011-10-10 ddumbfs-1.0b7
+    ddumbfs:
+      - added late block allocation to reduce self-fragmentation and increase
+      write1 and read speed (don't look to be working to well)
+
+    mkddumbfs
+      - added support for storage above 4To (thanks Mark)
+      
+    testddumbfs:
+      - added CPU usage
+      
+
+2011-10-06 ddumbfs-1.0b6
+    ddumbfs:
+        - sync header at file creation (make it more crash safe)
+        - update file size (h.size) at every change (make it more crash safe) 
+    
+2011-10-06 ddumbfs-1.0b5
+    ddumbfs:
+      - added ddfs.bfile_ro that is not open O_DIRECT, and can be read by any 
+      buffer without the lock.
+      - read don't use direct_io anymore  => faster
+      - removed the lock about bfile (bfile_rwlock) "for testing"
+
+2011-10-05 ddumbfs-1.0b4
+    ddumbfs:
+      - improved posix compliance, use -o default_permissions,use_ino
+      let ddumbfs pass mostly all pjd test. Persisting problems are 
+      related to the sticky bit used by fuse for other purpose
+      - "cp bigfile /ddumbfs ; sync ; pkill ddumbfs ; fsckddumbfs" looks to 
+      not loose contains of bigfile. (TODO: remove the sync :-)  
+            
+    fsckddumbfs:
+      - can repair block and index header or rebuild all index when
+      index file is missing or of the wrong size.
+
+    testddumbfs:
+      - new script to test filesystem, replace rndblock and add more stuff
+      testddumbfs -h for more
+
+
+2011-10-03 ddumbfs-1.0b3
+    ddumbfs:
+      - replaced the index spin_lock by a mutex because a spin_lock was not 
+      appropriate anymore when using the writer pool.
+      - ddumbfs compile and run on a centos6 x64, more test needed
+      - ddumb_truncate that alloc a fh was using ddumb_buf_flush() instead of 
+        _ddumb_flush() (pjd was crashing on a truncate)
+      - new default for pool=-100
+      - bonnie++ works on f14-i386 but fail on centos6-x64
+      - pjd works on f14-i386
+      - ATTN va_list don't work the same on i386 and x64, I had to 
+      reset it (moved inside the loop) before each reuse in xlog.c  
+
+       
+2011-10-02 ddumbfs-1.0b2
+    all:
+      - didn't compile on ubuntu and centos 5 (Mark Ruijter)
+      
+2011-10-01 ddumbfs-1.0b1
+    all:
+      - use sphinx to format the documentation
+      - new website http://www.magiksys.net/ddumbfs
+      
+    ddumbfs:
+      - added a pool of writer that write blocks asynchronously and increase speed on 
+      multi-core hardware. use option pool=#cpu to control           
+      - rewrite the lock/unlock part of the fh, zones and fh->buf 
+      - added "zone", to lock zone of a file the thread is working on 
+
+
+2011-06-10 ddumbfs-0.9
+    
+    all:
+      - store the the usedblock list at regular interval to have a better recovery of lost block
+      - rewrote python script into C and ddfslib.c library share common functions
+    
+    ddumbfs:
+      - share common library with other tools
+      
+    mkddumbfs:
+      - new utility to format a ddumbfs volume
+      
+    fsckddumbfs:
+      - to check and repair a ddumbfs volume 
+    
+    cpddumbfs:
+      - to upload and download files from a offline  ddumbfs volume 
+    
+    alterddumbfs:
+      - to alter the ddumbfs and test fsckddumbfs capability 
+    
+
+2011-05-17 ddumbfs-0.7
+
+    - new "file" format, before it was a list of addresses, now this is a list of
+    nodes (addr + hash), this will improve filesystem integrity checking
+    and allow double check with node in index. reclaim() must be split into
+    chksk() and reclaim(). chkdsk will take care of double checking hash in index.
+    the change has no performance effect except in file size now x6  
+    - overflow is now stored has a float
+    - removed c_addr_bits
+    - hash2idx() use float calculation instead of int, this allow to take advantage
+    of more bits from the hash regarding value from overflow, because every tile
+    overflow is x2 we can take one more bits from the hash in account => better 
+    hashing, lower collisions.   
+    - replaced "-o no_lock_index" by "-o [no]lock_index", default on
+    - include rndblock.c in example for testing read and write
+    - ddfs init remove all file in ddfsroot directory
+    
+
+2011-05-16 ddumbfs-0.6
+	- "-o lock_index" is by default, use "-o no_lock_index" to disable
+	- "-o sync_read" is by default
+	- improved rndblock, added 2st write and read test, and  report at end
+	- ddfs init works on python-2.4 (cento-5), but not upload/download
+	  because mmap on 2.4 don't support offset 
+	- ddumbfs should compile on centos-5.6 with fuse >= 2.8 (not tested)
+
+2011-05-11 ddumbfs-0.5
+	- Thanks to Mark Ruijter from http://www.lessfs.com for its precious advices
+	- pass fsx-linux even when using MAPPED write & read
+	- protect read/write/truncate by a lock on the fh
+	- added "-o lock_index" to lock index into memory
+	- "-o big_writes" speed up write of about 20%
+	- "-o sync_read" must be used to avoid CPU burning in spin_lock
+
+2011-05-01 ddumbfs-0.4 
+	first release
+
+

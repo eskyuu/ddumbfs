@@ -1,0 +1,9 @@
+ddumbfs is a fast inline deduplication filesystem for Linux based on FUSE and released under the GNU GPL. 
+
+More at http://www.magiksys.net/ddumbfs
+
+ddumbfs require fuse and mhash library 
+
+Copyright (C) 2011,2012 Alain Spineux
+
+

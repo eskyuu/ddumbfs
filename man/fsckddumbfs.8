@@ -1,0 +1,178 @@
+.TH "FSCKDDUMBFS" "8" "January 11, 2013" "1.0" "ddumbfs"
+.SH NAME
+fsckddumbfs \- command line tools to check and repair a ddumbfs filesystem
+.
+.nr rst2man-indent-level 0
+.
+.de1 rstReportMargin
+\\$1 \\n[an-margin]
+level \\n[rst2man-indent-level]
+level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
+-
+\\n[rst2man-indent0]
+\\n[rst2man-indent1]
+\\n[rst2man-indent2]
+..
+.de1 INDENT
+.\" .rstReportMargin pre:
+. RS \\$1
+. nr rst2man-indent\\n[rst2man-indent-level] \\n[an-margin]
+. nr rst2man-indent-level +1
+.\" .rstReportMargin post:
+..
+.de UNINDENT
+. RE
+.\" indent \\n[an-margin]
+.\" old: \\n[rst2man-indent\\n[rst2man-indent-level]]
+.nr rst2man-indent-level -1
+.\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
+.in \\n[rst2man-indent\\n[rst2man-indent-level]]u
+..
+.\" Man page generated from reStructeredText.
+.
+.SH SYNOPSIS
+.sp
+\fBfsckddumbfs\fP [options] \fIparent\-directory\fP
+.SH DESCRIPTION
+.sp
+\fBfsckddumbfs\fP check and repair a ddumbfs filesystem
+.sp
+The \fIparent\-directory\fP is the directory containing the \fIddfs.cfg\fP file and
+\fIddfsroot\fP directory.
+Operations inside the 
+.nf
+**
+.fi
+fsckddumbfs* process are done in a way that any
+unexpected interruption can be repaired by re\-running the  same command.
+.SH OPTIONS
+.INDENT 0.0
+.TP
+.B \-h, \-\-help
+Show help message and exit.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-v, \-\-verbose
+Be more verbose. Be careful this can slow down the process when you are
+working remotely through a slow link and that \fIfsckddumbfs\fP has a lot
+of problem to display.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-p, \-\-progress
+Display progress second by second of some part of the file system check.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-l, \-\-lock_index
+Lock index into memory (increase speed)
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-f, \-\-force
+Bypass some guardrail.
+Continue even if the \fIblock file\fP don\(aqt start with the appropriate
+\fImagic\fP signature.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-c, \-\-check
+Read\-only check. (very fast, only few seconds)
+Search any conflicting information in the index and in the files nodes.
+This is the right option to get an idea if their is any problem. To check
+block hashes, use option \fB\-C\fP bellow.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-C, \-\-check\-block
+read\-only check with block re\-hashing: (slow, depend of disk usage)
+Search any conflicting information in the index and in the files nodes,
+but also re\-hash all block referenced by the index and the files nodes.
+This give you an exhaustive status of the filesystem.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-n, \-\-repair
+Automatically repair. (fast, this is the \fBrecommended\fP option.)
+Search any conflicting information in the index and in the files nodes
+and fix them by calculating the blocks hashes when needed. Fix the index, and all
+files nodes.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-N, \-\-repair\-relaxed
+Automatically repair. (fastest, use it only if you understand what it does).
+Identical to the \fI\-n\fP option above but don\(aqt check new entries from files.
+This is useful if you have deleted your index and want to quickly rebuild it
+from files nodes without re\-hashing blocks.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-r, \-\-rebuild
+Rebuild a new index using only known used blocks. (slow, depend of disk usage)
+Drop index and re\-hash all known used blocks to re\-build a new index
+from scratch. Only blocks having a reference in files and in the used block
+list are re\-hashed.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-R, \-\-rebuild\-block
+Rebuild a new index by re\-hashing all blocks. (slowest)
+Drop index and re\-hash ALL blocks from the block file.
+Use it if some files are \fIcorrupted\fP and you are desperate, maybe some
+unallocated space in the block file could still contain the missing blocks.
+Don\(aqt have too much hope.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-k, \-\-pack
+Pack the \fIblockfile\fP. \fBWarning\fP, be sure to understand what it does
+and what it implies before to use it.
+.sp
+This operation can slow down further sequential read of the existing data.
+Further writes can be faster.
+.sp
+Blocks at the end of the \fIblockfile\fP will be moved at the beginning.
+The \fIindex\fP and the \fIfiles\fP will be updated to match the new addresses
+of the moved blocks. If the \fIblockfile\fP is a regular file, it will be
+truncated to free unused space.
+.sp
+The filesystem must be clean, You must use it in combination with
+switches \fI\-n\fP, \fI\-N\fP, \fI\-r\fP or \fI\-R\fP.
+.UNINDENT
+.SH EXAMPLES
+.sp
+Check ddumbfs filesystem located in \fI/l0/ddumbfs\fP. The read\-only check can
+even be done on an online filesystem, but the result could be
+inaccurate. To increase speed, use \fI\-l\fP to lock the index in memory.:
+.sp
+.nf
+.ft C
+fsckddumbfs \-c \-l /l0/ddumbfs
+.ft P
+.fi
+.sp
+Repair an offline ddumbfs filesystem located in \fI/l0/ddumbfs\fP:
+.sp
+.nf
+.ft C
+fsckddumbfs \-n \-l /l0/ddumbfs
+.ft P
+.fi
+.sp
+Every fix is logged in the log file (here in \fI/l0/ddumbfs/.ddumbfs/ddumbs.log\fP)
+and corrupted files are logged in file \fI/l0/ddumbfs/.ddumbfs/corrupted.txt\fP.
+.SH SEE ALSO
+.sp
+\fIddumbfs(1)\fP, \fImkddumbfs(8)\fP, \fIcpddumbfs(1)\fP
+.SH AUTHOR
+.sp
+Alain Spineux <\fI\%alain.spineux@gmail.com\fP>
+.SH AUTHOR
+Alain Spineux
+.SH COPYRIGHT
+2011, Alain Spineux
+.\" Generated by docutils manpage writer.
+.\" 
+.

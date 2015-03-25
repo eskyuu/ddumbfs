@@ -1,0 +1,80 @@
+#
+# spec.in file for package ddumbfs
+#
+
+Name:      ddumbfs
+Summary:   fast inline de-duplicating file system based on FUSE
+Version:   @VERSION@
+Release:   1%{?dist}
+License:   GPL
+Vendor:    Alain Spineux <alain.spineux@gmail.com>
+Packager:  Alain Spineux <alain.spineux@gmail.com>
+Group:          Applications/System
+URL:            http://www.magiksys.net/ddumbfs
+BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}
+BuildRequires:  mhash-devel
+BuildRequires:  fuse-devel
+BuildRequires:  pkgconfig
+
+Requires: fuse
+Requires: fuse-libs
+Requires: mhash
+
+Source0:   http://www.magiksys.net/download/ddumbfs/%{name}-%{version}.tar.gz
+BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-build
+
+%description
+ddumbfs is a fast inline deduplication filesystem for Linux based on FUSE 
+and released under the GNU GPL.
+Deduplication is a technique to avoid data duplication on disks and to
+increase its virtual capacity.
+ddumbfs works at block level. Before to write a block to the filesystem
+ddumbfs calculate its SHA1 or TIGER hash and search for it in the
+index. If the block already exists the reference is used, if not, the
+block is written and the index updated.
+It is especially useful to store successive backup, when data are mostly
+identical. 
+ddumbfs is especially efficient with backups of disk images or virtual 
+machines, when blocks stay aligned on a block boundary.
+
+%prep
+%setup -q
+
+%build
+%configure
+make
+
+%install
+rm -rf $RPM_BUILD_ROOT
+echo RPM_BUILD_ROOT $RPM_BUILD_ROOT
+echo buildroot %{buildroot}
+make DESTDIR=%{buildroot} install
+rm man/alterddumbfs.8
+rm $RPM_BUILD_ROOT/usr/share/man/man8/alterddumbfs.8
+
+%clean
+rm -rf $RPM_BUILD_ROOT
+
+%files
+%defattr(-,root,root,-)
+%doc doc/MISC doc/TODO doc/Changelog
+%{_bindir}/ddumbfs
+%{_bindir}/mkddumbfs
+%{_bindir}/fsckddumbfs
+%{_bindir}/cpddumbfs
+%{_bindir}/migrateddumbfs
+%{_mandir}/man8/ddumbfs.8.gz
+%{_mandir}/man8/mkddumbfs.8.gz
+%{_mandir}/man8/fsckddumbfs.8.gz
+%{_mandir}/man8/cpddumbfs.8.gz
+%{_mandir}/man8/migrateddumbfs.8.gz
+
+%changelog
+* Mon Dec 17 2012 Alain Spineux <alain.spineux@gmail.com> - 1.1-1
+- added tools : migrateddumbfs
+- updated description
+- ran rpmlint
+* Sun Nov  6 2011 Alain Spineux <alain.spineux@gmail.com> - 1.0b11-1
+- update
+* Fri May  6 2011 Alain Spineux <alain.spineux@gmail.com> - 0.4-1
+- first release

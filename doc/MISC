@@ -1,0 +1,52 @@
+README ddumbfs
+
+
+./configure CPPFLAGS=-DDDFS_DEBUG 
+
+#define DDFS_DEBUG 1 // * not the good place
+
+
+
+
+
+mkfs.ext4 -b 4096 -i 4144 -I 128 -O dir_index,^extent /dev/sdb1
+
+./ddumbfs -d -f  /mnt2 -o root=/ddumbfs/
+
+
+
+
+
+I have a 256Go partition mounted on /l1, 
+I will use 200G for the block file 
+
+
+# ddfs.py -s 200G -B 128k -o 1.3 init /l1/ddfs
+block file initialized: /l1/ddfs/ddfsblocks
+initialize index file /l1/ddfs/ddfsidx: 49094656 bytes, 2125467 nodes
+index file /l1/ddfs/ddfsidx initialized
+ddumbfs initialized in /l1/ddfs
+
+file_header_size: 8
+hash_size: 20
+block_size: 131072  <strong>this is the 128k block</strong>
+index_block_size: 4096
+node_overflow: 332   <strong>( 1.3*256 )</strong>
+partition_size: 214748364800
+block_count: 1638400 = partition_size / block_size
+addr_bits: 21 <em>bits</em> 21 first bits of the sha1 hash will be used has key into the index file
+addr_size:  3 <em>bytes</em> 3bytes to hold the 21 bits
+node_size: 23  hash_size+addr_size
+node_count: 2125467  =~  1.3*block_count + 
+node_block_count: 11935
+freeblock_offset: 4096 ( offset of free block list inside index file ) 
+freeblock_size: 204800 ( size of the block list in byte )
+node_offset: 208896    ( offset of node list inside index file = freeblock_offset+freeblock_size)
+index_size: 49094656   <strong>( 46Mo )</strong>
+index_block_count: 11986
+root_directory: ddfsroot    
+block_filename: ddfsblocks
+index_filename: ddfsidx
+ 
+ 
+
