@@ -354,7 +354,7 @@ unsigned long int thread_id(void)
 
 void preload_node(long long int node_idx)
 {  // make a read in nodes to load the page, usually just before to lock the mutex
-    char ch=*(ddfs->nodes+(node_idx*ddfs->c_node_size));
+    volatile char ch=*(ddfs->nodes+(node_idx*ddfs->c_node_size));
     (void)ch;
 }
 
@@ -1117,10 +1117,14 @@ int tree_explore(const char *fpath, const struct stat *sb, int typeflag, struct 
             // search the index, if the same hash can be found for another block
             // this will avoid to maybe loose useful information for next fsck
             blockaddr baddr=addr;
-            pthread_mutex_lock_d(&ifile_mutex);
-            nodeidx node_idx=ddfs_search_hash(hash, &baddr);
-            if (node_idx<-1) r_not_found++; // >=0 means found, -1 means == zeroes block
-            pthread_mutex_unlock_d(&ifile_mutex);
+
+            // Only search the index if we have it locked in memory
+            if(ddfs->lock_index) {
+                pthread_mutex_lock_d(&ifile_mutex);
+                nodeidx node_idx=ddfs_search_hash(hash, &baddr);
+                if (node_idx<-1) r_not_found++; // >=0 means found, -1 means == zeroes block
+                pthread_mutex_unlock_d(&ifile_mutex);
+            }
 
             pthread_spin_lock(&reclaim_spinlock);
             bit_array_set(&ba_found_in_files, addr);
@@ -1480,7 +1484,7 @@ long long int ddfs_write_block2(const char *block, unsigned char *bhash, struct 
     ddumb_statistic.block_write_try_next_node+=res-1; // should use the number of try in ddfs_locate_hash
 
     // save the used block list at regular interval
-    ddumbfs_save_usedblocks(16000);
+    ddumbfs_save_usedblocks(16000 * (131072 / ddfs->c_block_size));
 
     // the hash is not found, search a free block in the BlockFile
     long long int baddr=ddfs_alloc_block();
@@ -1811,7 +1815,7 @@ static int ddumb_getattr(const char *path, struct stat *stbuf)
         if (res<0) return res;
     }
 
-    DDFS_LOG(LOG_NOTICE, "[%lu]++  ddumb_getattr %s size=%lld\n", thread_id(), path, (long long int)stbuf->st_size);
+    //DDFS_LOG(LOG_NOTICE, "[%lu]++  ddumb_getattr %s size=%lld\n", thread_id(), path, (long long int)stbuf->st_size);
     return 0;
 }
 
@@ -2773,7 +2777,7 @@ void *ddumbfs_background(void *ptr)
 
         // save_usedblocks ?
         pthread_mutex_lock_d(&ifile_mutex);
-        if (res==ETIMEDOUT) ddumbfs_save_usedblocks(1000);
+        if (res==ETIMEDOUT) ddumbfs_save_usedblocks(1000 * (131072 / ddfs->c_block_size));
         else ddumbfs_save_usedblocks(0);
         pthread_mutex_unlock_d(&ifile_mutex);
 

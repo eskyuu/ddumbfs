@@ -1479,6 +1479,10 @@ int ddfs_init(int force, int rebuild, int direct_io, int lock_index, FILE *outpu
 
     }
 
+    if(!ddfs->lock_index) {
+	madvise(ddfs->nodes, ddfs->c_node_block_count*ddfs->c_index_block_size, MADV_RANDOM);
+    }
+
     long long int i;
     unsigned char c=0;
     for (i=0; i<ddfs->c_node_block_count; i++)
