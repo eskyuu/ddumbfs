@@ -2581,7 +2581,8 @@ static int ddumb_statfs(const char *path, struct statvfs *stbuf)
 
     long long int s, u;
     pthread_mutex_lock_d(&ifile_mutex);
-    bit_array_count(&ddfs->ba_usedblocks, &s, &u);
+    //bit_array_count(&ddfs->ba_usedblocks, &s, &u);
+    u = ddfs->ba_usedblocks.size - ddfs->usedblock;
     pthread_mutex_unlock_d(&ifile_mutex);
     stbuf->f_bfree=stbuf->f_bfree*(stbuf->f_frsize/ddfs->c_addr_size);
     if (u<stbuf->f_bfree) stbuf->f_bfree=u;
