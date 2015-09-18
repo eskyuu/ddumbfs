@@ -842,25 +842,53 @@ int ddfs_save_usedblocks()
 {
     char filename[FILENAME_MAX];
     char filename0[FILENAME_MAX];
+    char filename1[FILENAME_MAX];
 
     snprintf(filename, sizeof(filename), "%s/%s", ddfs->pdir, DDFS_BACKUP_USEDBLOCK);
     snprintf(filename0, sizeof(filename0), "%s/%s.0", ddfs->pdir, DDFS_BACKUP_USEDBLOCK);
+    snprintf(filename1, sizeof(filename1), "%s/%s.1", ddfs->pdir, DDFS_BACKUP_USEDBLOCK);
 
-    int res=bit_array_save(&ddfs->ba_usedblocks, filename0, DDFS_SYNC);
-    if (res!=0)
-    {
-        if (res<0)
-        {
-            DDFS_LOG(LOG_ERR, "cannot save usedblock in %s (%s)\n", filename0, strerror(-res));
-        }
-        else
-        {
-            DDFS_LOG(LOG_ERR, "cannot save usedblock in %s\n", filename0);
-        }
-        unlink(filename0);
-        return res;
+    int size=ddfs->ba_usedblocks.isize*BIT_INT_BYTE;
+    struct stat st; 
+    int res;
+
+    // If the new file exists and is the correct size, use mmap to reduce disk writes
+    if(stat(filename0, &st) == 0 && st.st_size == size) {
+	int new_usedblocks_fd=open(filename0, O_RDWR);
+	if(new_usedblocks_fd == -1) {
+	    DDFS_LOG(LOG_ERR, "cannot open %s (%s)\n", filename0, strerror(errno));
+	    return -1;
+	}
+
+	char *newusedblock=mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_SHARED, new_usedblocks_fd, 0);
+	if(newusedblock == NULL) {
+	    DDFS_LOG(LOG_ERR, "mmap() failed\n");
+	    close(new_usedblocks_fd);
+	    return 1;
+	}
+
+	memcpy(newusedblock, ddfs->ba_usedblocks.array, size);
+	munmap(newusedblock, size);
+	close(new_usedblocks_fd);
     }
-
+    else
+    {
+	res=bit_array_save(&ddfs->ba_usedblocks, filename0, DDFS_SYNC);
+	if (res!=0)
+	{
+	    if (res<0)
+	    {
+	        DDFS_LOG(LOG_ERR, "cannot save usedblock in %s (%s)\n", filename0, strerror(-res));
+	    }
+	    else
+	    {
+	        DDFS_LOG(LOG_ERR, "cannot save usedblock in %s\n", filename0);
+	    }
+	    unlink(filename0);
+	    return res;
+	}
+    }
+    
     if (pathexists(filename))
     {
         // Now I must SYNC blockfile and indexfile,
@@ -870,21 +898,29 @@ int ddfs_save_usedblocks()
     	fsync(ddfs->ifile);
     	// Now both are synced, the old usedblock is still valid but now,
     	// the new one too, I can rename it and make it the reference
-
-        res=unlink(filename);
+    
+        res=rename(filename, filename1);
         if (res==-1)
         {
             DDFS_LOG(LOG_ERR, "cannot delete %s (%s)\n", filename, strerror(errno));
             return -errno;
         }
     }
-
+    
     res=rename(filename0, filename);
     if (res==-1)
     {
         DDFS_LOG(LOG_ERR, "cannot rename %s in %s (%s)\n", filename0, filename, strerror(errno));
         return -errno;
     }
+
+    res=rename(filename1, filename0);
+    if (res==-1)
+    {
+        DDFS_LOG(LOG_ERR, "cannot rename %s in %s (%s)\n", filename1, filename0, strerror(errno));
+        return -errno;
+    }
+
     return 0;
 }
 

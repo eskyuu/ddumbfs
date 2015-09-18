@@ -377,15 +377,6 @@ int ddfs_hash_blocks(struct bit_array* ba, long long int ba_start, int (*bb_proc
 	return 0;
 }
 
-void ddfs_chk_preload_node(nodeidx node_idx, int num_nodes)
-{
-    //printf("Preloading %d nodes starting at index position %lld\n", num_nodes, node_idx);
-
-    long long node_offset=(node_idx*ddfs->c_node_size) & (0-getpagesize());
-    int numpages=1 + ((num_nodes*ddfs->c_node_size) / getpagesize());
-    madvise(ddfs->nodes+node_offset, getpagesize() * numpages, MADV_WILLNEED);
-}
-
 /**
  * check the index for errors
  *
@@ -687,8 +678,7 @@ int ddfs_chk_tree_explore(const char *fpath, const struct stat *sb, int typeflag
         }
         else
         {
-	    nodeidx node_idx;
-            node_idx = ddfs_search_hash(hash, &addr);
+            ddfs_search_hash(hash, &addr);
 
 	    //printf("Hash found in node index position %lld\n", node_idx);
 

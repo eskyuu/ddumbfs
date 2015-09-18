@@ -8,6 +8,7 @@
 #define _XOPEN_SOURCE 500
 
 #define _LARGEFILE64_SOURCE
+#define _GNU_SOURCE
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,6 +18,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/mman.h>
 #include <fcntl.h>
 #include <ftw.h>
 
@@ -111,6 +113,15 @@ long long int ddfs_fsck_repair_node_order(struct bit_array *wrong, int verbose)
         node_idx++;
     }
     return errors;
+}
+
+void ddfs_chk_preload_node(nodeidx node_idx, int num_nodes)
+{
+    //printf("Preloading %d nodes starting at index position %lld\n", num_nodes, node_idx);
+
+    long long node_offset=(node_idx*ddfs->c_node_size) & (0-getpagesize());
+    int numpages=1 + ((num_nodes*ddfs->c_node_size) / getpagesize());
+    madvise(ddfs->nodes+node_offset, getpagesize() * numpages, MADV_WILLNEED);
 }
 
 /**
@@ -603,8 +614,8 @@ int ddfs_fsck_tree_explore_old(const char *fpath, const struct stat *sb, int typ
  */
 int ddfs_fsck_tree_explore(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf)
 {
-    int res, len;
-    unsigned char node[NODE_SIZE];
+    int res, len, pcount;
+    unsigned char node[NODE_SIZE*NODE_FSCK_PREFETCH];
     unsigned char *hash=node+ddfs->c_addr_size;
     blockaddr addr;
     blockaddr prev_addr=-1;
@@ -669,9 +680,19 @@ int ddfs_fsck_tree_explore(const char *fpath, const struct stat *sb, int typefla
     int size_mismatch=' ';
     int cannot_fix_this_file=0;
 
-    len=fread(node, 1, ddfs->c_node_size, file);
+    len=fread(node, 1, ddfs->c_node_size*NODE_FSCK_PREFETCH, file);
+    pcount=len/ddfs->c_node_size;
+    len=len%ddfs->c_node_size;
 
-    while (len==ddfs->c_node_size)
+    if (!ddfs->lock_index)
+    {
+	int pnum;
+	for(pnum=0;pnum<pcount;pnum++) {
+	    ddfs_chk_preload_node(ddfs_hash2idx(node+(pnum*ddfs->c_node_size)+ddfs->c_addr_size), 1);
+	}
+    }
+
+    while (pcount)
     {
         addr=ddfs_get_node_addr(node);
 
@@ -742,7 +763,7 @@ int ddfs_fsck_tree_explore(const char *fpath, const struct stat *sb, int typefla
                     }
                 }
                 // set file position before next read, required by ANSI C before to switch between read/write
-                res=fseek(file, ddfs->c_file_header_size+(block_pos+1)*ddfs->c_node_size, SEEK_SET);
+                res=fseek(file, ddfs->c_file_header_size+(block_pos+pcount)*ddfs->c_node_size, SEEK_SET);
                 if (res==-1)
                 {
                     DDFS_LOG(LOG_ERR, "cannot reposition file: %s, %s\n", fpath, strerror(errno));
@@ -757,7 +778,27 @@ int ddfs_fsck_tree_explore(const char *fpath, const struct stat *sb, int typefla
         if (te_block_found_in_files && addr<ddfs->c_block_count) bit_array_set(te_block_found_in_files, addr); // use the correct address
 
         block_pos++;
-        len=fread(node, 1, ddfs->c_node_size, file);
+
+	// Move the next node to the start of the array
+	if(pcount>1)
+	    memmove(node, node+ddfs->c_node_size, ddfs->c_node_size*(pcount-1));
+
+	// If we had a full buffer, read the next node
+	if(pcount == NODE_FSCK_PREFETCH)
+	{
+	    len=fread(node+(ddfs->c_node_size*(pcount-1)), 1, ddfs->c_node_size, file);
+
+	    // If we did not read a full node, reduce the node count, else preload the new node
+	    if(len != ddfs->c_node_size)
+		pcount--;
+	    else
+		ddfs_chk_preload_node(ddfs_hash2idx(node+((pcount-1)*ddfs->c_node_size)+ddfs->c_addr_size), 1);
+	}
+	else
+	{
+	    // We do not have a full buffer, so we reduce the count until we run out of nodes
+	    pcount--;
+	}
     }
 
     if (len==-1)

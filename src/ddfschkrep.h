@@ -36,5 +36,6 @@ int ddfs_fsck_tree_explore(const char *fpath, const struct stat *sb, int typefla
 
 int ddfs_fsck_fix_files_and_usedblocks(int verbose, int progress);
 
+void ddfs_chk_preload_node(nodeidx node_idx, int num_nodes);
 
 #endif /* DDFSCHKREP_H_ */
