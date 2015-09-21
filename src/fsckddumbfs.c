@@ -1507,7 +1507,7 @@ int main(int argc, char *argv[])
     }
     else if (rebuild_flag || rebuild_block_flag)
     {
-        ddfs_lock(".autofck"); // I don't care if it works or not
+        ddfs_lock(".autofsck"); // I don't care if it works or not
         if (ddfs_lock(".rebuildfsck")) perror(".rebuildfsck");
         res=ddfs_rebuild(rebuild_block_flag);
         if (0==res)
@@ -1522,7 +1522,7 @@ int main(int argc, char *argv[])
     }
     else if (normal_flag || normal_relaxed_flag)
     {
-        ddfs_lock(".autofck"); // I don't care if it works or not
+        ddfs_lock(".autofsck"); // I don't care if it works or not
         res=ddfs_fsck(normal_relaxed_flag, verbose_flag, progress_flag);
         if (0==res)
         {
