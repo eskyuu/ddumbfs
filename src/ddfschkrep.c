@@ -47,6 +47,7 @@ FILE *te_corrupted_stream=NULL;
 
 struct bit_array *te_block_found_in_files=NULL;
 struct bit_array *te_update_index=NULL;
+struct bit_array *te_usedblocks=NULL;
 
 
 /**
@@ -77,6 +78,7 @@ long long int ddfs_fsck_repair_node_order(struct bit_array *wrong, int verbose)
         }
         else if (addr<=DDFS_LAST_RESERVED_BLOCK || ddfs->c_block_count<=addr)
         {
+	    // The address is before the reserved block, or after the last block
             errors++;
             if (verbose) DDFS_LOG(LOG_ERR, "repair_node_order: node %lld (addr=%lld) has an invalid address, delete\n", node_idx, addr);
             node_delete(node_idx);
@@ -84,9 +86,11 @@ long long int ddfs_fsck_repair_node_order(struct bit_array *wrong, int verbose)
         }
         else
         {
+	    // Get the correct index position for the hash
             nodeidx cidx=ddfs_hash2idx(hash);
             if (node_idx<cidx)
             {
+		// If the node is before its ideal position, fix
                 errors++;
                 if (verbose) DDFS_LOG(LOG_ERR, "repair_node_order: node %lld (addr=%lld) before it ideal position %lld, fix\n", node_idx, addr, cidx);
                 if (wrong!=NULL) bit_array_set(wrong, addr);
@@ -98,6 +102,7 @@ long long int ddfs_fsck_repair_node_order(struct bit_array *wrong, int verbose)
             }
             else // (cidx<node_idx)
             {
+		// The node is after its ideal position - fix if the previous node is empty
                 blockaddr baddr=ddfs_get_node_addr(node-ddfs->c_node_size);
                 if (baddr==0 || memcmp(node+(ddfs->c_addr_size-ddfs->c_node_size), hash, ddfs->c_hash_size)>0)
                 {
@@ -601,7 +606,103 @@ int ddfs_fsck_tree_explore_old(const char *fpath, const struct stat *sb, int typ
     if (updated || bad)
     {
         if (te_corrupted_stream) fprintf(te_corrupted_stream, "%s %s\n", status, fpath);
-        if (te_fix_file) DDFS_LOG(LOG_WARNING, "%s %s\n", status, fpath);
+        if (te_fix_file) DDFS_LOG(LOG_WARNING, "File was fixed as follows: %s %s\n", status, fpath);
+    }
+
+    fclose(file);
+    return 0;
+}
+
+/**
+ * function called by nftw to build the usedblocks list
+ *
+ */
+int ddfs_fsck_tree_find_usedblocks(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf)
+{
+    int len, res;
+    blockaddr addr;
+    uint64_t size;
+
+    // Reset the global variable
+    te_block_counter=0;
+
+    // We need a place to store one node at a time
+    unsigned char node[NODE_SIZE];
+
+    if(!te_usedblocks) {
+        DDFS_LOG(LOG_ERR, "ddfs_fsck_tree_find_usedblocks() called without te_usedblocks being set\n");
+	return 1;
+    }
+
+    if (typeflag!=FTW_F || ! S_ISREG(sb->st_mode)) return 0;
+    if (0==strncmp(fpath+ddfs->rdir_len, SPECIAL_DIR, ddfs->special_dir_len))
+    {   // skip SPECIAL_DIR
+        return 0;
+    }
+
+    te_file_count++;
+    if (te_progress && now()-te_progress>NOW_PER_SEC)
+    {
+	te_progress=now();
+	printf("Read file: %lld in %llds\r", te_file_count, (te_progress-te_start)/NOW_PER_SEC);
+	fflush(stdout);
+    }
+
+    FILE *file;
+    file=fopen(fpath, "r");
+    if (file==NULL)
+    {
+        DDFS_LOG(LOG_ERR, "cannot open: %s (%s)\n", fpath, strerror(errno));
+        return 1;
+    }
+
+    // be careful, file_header_set_conv return c_file_header_size for empty file
+    len=file_header_set_conv(fileno(file), &size);
+    if (len==-1)
+    {
+        DDFS_LOG(LOG_ERR, "cannot read header: %s (%s)\n", fpath, strerror(errno));
+        fclose(file);
+        return 1;
+    }
+    else if (len!=ddfs->c_file_header_size)
+    {
+        if (te_verbose) DDFS_LOG(LOG_INFO, "invalid header, ignore file : %s\n", fpath);
+        if (te_corrupted_stream)
+        {
+            fprintf(te_corrupted_stream, " H   %s\n", fpath);
+            DDFS_LOG(LOG_WARNING,  " H   %s\n", fpath);
+        }
+        te_corrupted_count++;
+        fclose(file);
+        return 0;
+    }
+
+    res=fseek(file, ddfs->c_file_header_size, SEEK_SET);
+    if (res==-1)
+    {
+        DDFS_LOG(LOG_ERR, "cannot seek at first block: %s (%s)\n", fpath, strerror(errno));
+        fclose(file);
+        return 1;
+    }
+
+    len=fread(node, 1, ddfs->c_node_size, file);
+    while(len == ddfs->c_node_size) {
+	addr=ddfs_get_node_addr(node);
+
+	// Mark the block as used if it's in the right range
+	if (addr>=0 && addr <ddfs->c_block_count) {
+	    bit_array_set(te_usedblocks, addr);
+	}
+
+	// Read the next block from the file
+	len=fread(node, 1, ddfs->c_node_size, file);
+    }
+
+    if (len==-1)
+    {
+        DDFS_LOG(LOG_ERR, "cannot read file: %s (%s)\n", fpath, strerror(errno));
+        fclose(file);
+        return 1;
     }
 
     fclose(file);
@@ -956,6 +1057,10 @@ long long int ddfs_fsck_cleanup_index_from_extra_blocks(struct bit_array *ba_lis
     return node_deleted;
 }
 
+/* Fix errors using the following logic:
+ - Fix the index
+ - Fix the files to match the index
+*/
 
 int ddfs_fsck(int relaxed, int verbose, int progress)
 {
@@ -968,11 +1073,13 @@ int ddfs_fsck(int relaxed, int verbose, int progress)
     struct bit_array ba_suspect_need_rehash;
     struct bit_array ba_backup;
 
+    // Create some bit arrays to keep track of things during the check
     bit_array_init(&ba_found_in_files, ddfs->c_block_count, 0x0);
     bit_array_init(&ba_found_in_nodes, ddfs->c_block_count, 0x0);
     bit_array_init(&ba_suspect_need_rehash, ddfs->c_block_count, 0x0);
     bit_array_init(&ba_backup, ddfs->c_block_count, 0x0);
 
+    // Reset the suspect need rehash array
     bit_array_reset(&ba_suspect_need_rehash, 0);
 
     //
@@ -984,9 +1091,7 @@ int ddfs_fsck(int relaxed, int verbose, int progress)
     DDFS_LOG(LOG_INFO, "Check and repair node order in index: fixed %lld errors.\n", errors);
 
     //
-    // read files to retrieve hashes not found in the index
-    // if "relaxed", just add the unknown nodes to the index without checking
-    // if not "relaxed" get the list of blocks that will be rehashed and added to the index later
+    // read files to retrieve block numbers in use
     //
     te_file_count=te_addr_count=te_frag_count=te_corrupted_count=0;
     te_verbose=verbose;
@@ -997,17 +1102,11 @@ int ddfs_fsck(int relaxed, int verbose, int progress)
     bit_array_reset(&ba_found_in_files, 0);
     bit_array_set(&ba_found_in_files, 0);  // block ZERO is always used
     bit_array_set(&ba_found_in_files, 1);  // block    1 is always used
-    te_block_found_in_files=&ba_found_in_files;
-    te_update_index=&ba_suspect_need_rehash;
-    te_update_index_relaxed=relaxed;
+    te_usedblocks=&ba_found_in_files;
 
-    te_corrupted_stream=NULL;
-    te_fix_file=0;
-    te_block_counter=0;
-
-    DDFS_LOG(LOG_INFO, "Search files for nodes missing in the index.\n");
+    DDFS_LOG(LOG_INFO, "Search files to find all used blocks.\n");
     start=now();
-    res=nftw(ddfs->rdir, ddfs_fsck_tree_explore, 10, FTW_MOUNT | FTW_PHYS);
+    res=nftw(ddfs->rdir, ddfs_fsck_tree_find_usedblocks, 10, FTW_MOUNT | FTW_PHYS);
     end=now();
     if (res)
     {
@@ -1018,7 +1117,7 @@ int ddfs_fsck(int relaxed, int verbose, int progress)
     bit_array_count(&ba_found_in_files, &s, &u);
     DDFS_LOG(LOG_INFO, "Read %lld files in %.1fs.\n", te_file_count, (end-start)*1.0/NOW_PER_SEC);
     DDFS_LOG(LOG_INFO, "%lld blocks used in files.\n", s);
-    DDFS_LOG(LOG_INFO, "%lld more suspect blocks.\n", te_block_counter);
+//    DDFS_LOG(LOG_INFO, "%lld more suspect blocks.\n", te_block_counter);
 //    bit_array_count(&ba_rehash, &s, &u);
 //    DDFS_LOG(LOG_INFO, "%lld blocks must be re-hashed and added to the index.\n", s);
 
@@ -1037,12 +1136,20 @@ int ddfs_fsck(int relaxed, int verbose, int progress)
     {
         if (ddfs_load_usedblocks(&ba_backup)==0)
         {
-            // ba_suspect_need_rehash=ba_suspect_need_rehash + (ba_found_in_files - ba_backup)
-            long long int suspect_count1, suspect_count2, u;
+            long long int suspect_count1, suspect_count2, suspect_count3, u;
+
+	    // Save the current count of bits set
             bit_array_count(&ba_suspect_need_rehash, &suspect_count1, &u);
+
+	    // Merge the difference between the current used block list and saved list with the suspect list
             bit_array_plus_diff(&ba_suspect_need_rehash, &ba_found_in_files, &ba_backup);
             bit_array_count(&ba_suspect_need_rehash, &suspect_count2, &u);
             DDFS_LOG(LOG_INFO, "Check also last recently added blocks: %lld.\n", suspect_count2-suspect_count1);
+
+	    // Merge the difference between the current used block list and index blocks with the suspect list
+            bit_array_plus_diff(&ba_suspect_need_rehash, &ba_found_in_files, &ba_found_in_nodes);
+            bit_array_count(&ba_suspect_need_rehash, &suspect_count3, &u);
+            DDFS_LOG(LOG_INFO, "Check also blocks in files not in nodes: %lld.\n", suspect_count3-suspect_count2);
         }
     }
     else
@@ -1057,6 +1164,8 @@ int ddfs_fsck(int relaxed, int verbose, int progress)
     errors=ddfs_update_index_from_blocks(&ba_suspect_need_rehash, verbose, progress);
     DDFS_LOG(LOG_INFO, "Re-hash errors: %lld\n", errors);
 
+    // The index is now accurate (in the correct order, with no duplicates and
+    // all referenced blocks indexed
 
     // But the index could still contains unreferenced block
     // And the files must be updated with the index references to the blocks.
