@@ -833,6 +833,22 @@ blockaddr ddfs_write_block(const char *block, unsigned char *bhash)
 }
 
 /**
+ * Sync index to disk
+ */
+void ddfs_sync_index(int synchronous) {
+    int res;
+    int msync_flags=(synchronous?MS_SYNC:MS_ASYNC);
+
+    res=msync(ddfs->usedblocks_map, ddfs->c_node_offset-ddfs->c_freeblock_offset, msync_flags);
+    if(res)
+        DDFS_LOG(LOG_WARNING, "cannot msync usedblocks_map (%s)\n", strerror(errno));
+
+    res=msync(ddfs->nodes, ddfs->c_node_block_count*ddfs->c_index_block_size, msync_flags);
+    if(res)
+        DDFS_LOG(LOG_WARNING, "cannot msync nodes (%s)\n", strerror(errno));
+}
+
+/**
  * keep a copy of usedblock and rollout previous one
  *
  * used for recovery to know witch block where recently allocated
@@ -906,13 +922,7 @@ int ddfs_save_usedblocks()
     if (pathexists(filename))
     {
 	// Call msync to be sure since these are mmapped files
-	res=msync(ddfs->usedblocks_map, ddfs->c_node_offset-ddfs->c_freeblock_offset, MS_SYNC);
-	if(res)
-            DDFS_LOG(LOG_WARNING, "cannot msync usedblocks_map (%s)\n", strerror(errno));
-
-	res=msync(ddfs->nodes, ddfs->c_node_block_count*ddfs->c_index_block_size, MS_SYNC);
-	if(res)
-            DDFS_LOG(LOG_WARNING, "cannot msync nodes (%s)\n", strerror(errno));
+	ddfs_sync_index(1);
 
         // Now I must SYNC blockfile and indexfile,
     	// this is the smart place to sync them without lock

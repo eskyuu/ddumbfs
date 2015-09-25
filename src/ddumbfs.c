@@ -1498,6 +1498,11 @@ long long int ddfs_write_block2(const char *block, unsigned char *bhash, struct 
     // save the used block list at regular interval
     ddumbfs_save_usedblocks(16000 * (131072 / ddfs->c_block_size));
 
+    // call msync asynchronously more frequently to even out the index writes
+    if(llabs(ddfs->usedblock-used_block_saved)>=(1000 * (131072 / ddfs->c_block_size))) {
+	ddfs_sync_index(0);
+    }
+
     // the hash is not found, search a free block in the BlockFile
     long long int baddr=ddfs_alloc_block();
     if (baddr<0)
