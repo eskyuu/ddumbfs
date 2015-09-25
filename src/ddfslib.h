@@ -224,9 +224,11 @@ struct ddfs_ctx
     long long int block_gap_mask;
     int block_size_shift;
 
+    int background_index_changed_flag;
+
+    int auto_fsck_clean;
     int auto_fsck;
     int rebuild_fsck;
-
 
     int error_nodes_exausted;
     int error_block_write;

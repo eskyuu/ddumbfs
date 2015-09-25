@@ -905,11 +905,21 @@ int ddfs_save_usedblocks()
     
     if (pathexists(filename))
     {
+	// Call msync to be sure since these are mmapped files
+	res=msync(ddfs->usedblocks_map, ddfs->c_node_offset-ddfs->c_freeblock_offset, MS_SYNC);
+	if(res)
+            DDFS_LOG(LOG_WARNING, "cannot msync usedblocks_map (%s)\n", strerror(errno));
+
+	res=msync(ddfs->nodes, ddfs->c_node_block_count*ddfs->c_index_block_size, MS_SYNC);
+	if(res)
+            DDFS_LOG(LOG_WARNING, "cannot msync nodes (%s)\n", strerror(errno));
+
         // Now I must SYNC blockfile and indexfile,
     	// this is the smart place to sync them without lock
     	// because I must have bfile and ifile newer than usedblock
     	fsync(ddfs->bfile);
     	fsync(ddfs->ifile);
+
     	// Now both are synced, the old usedblock is still valid but now,
     	// the new one too, I can rename it and make it the reference
     
@@ -1130,7 +1140,8 @@ int ddfs_loadcfg(char *ddfs_parent, FILE *output)
         return 3;
     }
 
-    ddfs->auto_fsck=ddfs_testlock(".autofsck");
+    ddfs->auto_fsck_clean=ddfs_testlock(".autofsck.clean");
+    ddfs->auto_fsck=(ddfs->auto_fsck_clean?0:ddfs_testlock(".autofsck"));
     ddfs->rebuild_fsck=ddfs_testlock(".rebuildfsck");
 
     return 0;
@@ -1565,6 +1576,7 @@ int ddfs_init(int force, int rebuild, int direct_io, int lock_index, FILE *outpu
     ddfs->null_block_cidx=ddfs_hash2idx(ddfs->null_block_hash);
 
     //
+    ddfs->background_index_changed_flag=0;
     ddfs->error_nodes_exausted=0;
     ddfs->error_block_write=0;
     ddfs->error_block_read=0;
