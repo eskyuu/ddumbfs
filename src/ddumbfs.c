@@ -1167,11 +1167,12 @@ int ddumbfs_save_usedblocks(int limit)
 //    DDFS_LOG_DEBUG("save used block %lld-%lld>%d\n", ddfs->usedblock, used_block_saved, limit);
     if (llabs(ddfs->usedblock-used_block_saved)>=limit)
     {
+	time_t start_time=time(NULL);
         res=ddfs_save_usedblocks();
         if (res==0)
         {
             used_block_saved=ddfs->usedblock;
-            DDFS_LOG(LOG_INFO, "save used block list: %lld blocks in use\n", ddfs->usedblock);
+            DDFS_LOG(LOG_INFO, "save used block list in %d seconds: %lld blocks in use\n", (int)(time(NULL)-start_time), ddfs->usedblock);
         }
     }
 
@@ -2790,8 +2791,8 @@ void *ddumbfs_background(void *ptr)
 
         if (time(NULL)>next_sync)
         {
-        	fsync(ddfs->bfile);
-        	fsync(ddfs->ifile);
+            fsync(ddfs->bfile);
+            fsync(ddfs->ifile);
             next_sync=time(NULL)+ddfs->c_auto_sync;
         }
 
