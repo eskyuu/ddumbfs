@@ -855,6 +855,9 @@ int ddfs_save_usedblocks()
     // If the new file exists and is the correct size, use mmap to reduce disk writes
     if(stat(filename0, &st) == 0 && st.st_size == size) {
 	int new_usedblocks_fd=open(filename0, O_RDWR);
+	int pagesize=getpagesize();
+	int thispage;
+
 	if(new_usedblocks_fd == -1) {
 	    DDFS_LOG(LOG_ERR, "cannot open %s (%s)\n", filename0, strerror(errno));
 	    return -1;
@@ -867,9 +870,20 @@ int ddfs_save_usedblocks()
 	    return 1;
 	}
 
-	memcpy(newusedblock, ddfs->ba_usedblocks.array, size);
+	int changed_data=0;
+	for(thispage=0; thispage < size; thispage+=pagesize) {
+	    // We either compare a full page, or the last n bytes
+	    int complen=((thispage+pagesize <= size)?pagesize:size-thispage);
+	    //DDFS_LOG(LOG_INFO, "Checking position %d of %d length %d\n", thispage, size, complen);
+
+	    if(memcmp(newusedblock+thispage, (char *)ddfs->ba_usedblocks.array+thispage, complen)!=0) {
+		memcpy(newusedblock+thispage, (char *)ddfs->ba_usedblocks.array+thispage, complen);
+		changed_data+=complen;
+	    }
+	}
 	munmap(newusedblock, size);
 	close(new_usedblocks_fd);
+	DDFS_LOG(LOG_INFO, "%d bytes updated in used block list\n", changed_data);
     }
     else
     {
