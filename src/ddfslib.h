@@ -289,7 +289,6 @@ int ddfs_read_block(blockaddr addr, char *buf, int size, int gap);
 blockaddr ddfs_store_block(const char *block, blockaddr force_addr);
 blockaddr ddfs_write_block(const char *block, unsigned char *bhash);
 
-void ddfs_sync_index(int synchronous);
 int ddfs_save_usedblocks();
 int ddfs_load_usedblocks(struct bit_array *ba);
 int ddfs_find_parent(char *path, char *parent);
