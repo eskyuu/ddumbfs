@@ -352,10 +352,18 @@ unsigned long int thread_id(void)
     return (unsigned long int) pthread_self();
 }
 
+void preload_nodes(long long int node_idx, int num_nodes)
+{
+    long long node_offset=(node_idx*ddfs->c_node_size) & (0-getpagesize());
+    int numpages=1 + ((num_nodes*ddfs->c_node_size) / getpagesize());
+    madvise(ddfs->nodes+node_offset, getpagesize() * numpages, MADV_WILLNEED);
+}
+
 void preload_node(long long int node_idx)
 {  // make a read in nodes to load the page, usually just before to lock the mutex
-    volatile char ch=*(ddfs->nodes+(node_idx*ddfs->c_node_size));
-    (void)ch;
+    //volatile char ch=*(ddfs->nodes+(node_idx*ddfs->c_node_size));
+    //(void)ch;
+    preload_nodes(node_idx, 1);
 }
 
 #define ddumb_get_fh(fi) ((struct ddumb_fh *)(uintptr_t)(fi)->fh)
@@ -1277,12 +1285,16 @@ void reclaim(FILE *output)
             long long int node_count=0;
             long long int node_deleted=0;
             long long int node_idx=0;
+            long long int node_preload_idx=0;
             // read all nodes, delete unused blocks
             while (node_idx<ddfs->c_node_count)
             {
                 if (!ddfs->lock_index)
                 {
-                    preload_node(node_idx);  // pre-load into cache before to lock
+		    while((node_preload_idx - node_idx) < RECLAIM_INDEX_PRELOAD) {
+			preload_nodes(node_preload_idx, RECLAIM_INDEX_PRELOAD);  // pre-load into cache before lock
+			node_preload_idx+=RECLAIM_INDEX_PRELOAD;
+		    }
                 }
                 pthread_mutex_lock_d(&ifile_mutex);
                 long long int addr=ddfs_get_node_addr(ddfs->nodes+(node_idx*ddfs->c_node_size));

@@ -140,6 +140,7 @@ extern struct xlogger ddfs_logger[];
 #define NOW_PER_SEC             1000
 #define FSCK_INDEX_PRELOAD	10000
 #define NODE_FSCK_PREFETCH	1000
+#define RECLAIM_INDEX_PRELOAD	10000
 
 typedef long long int blockaddr;
 typedef long long int nodeidx;
