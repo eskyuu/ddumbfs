@@ -352,6 +352,7 @@ unsigned long int thread_id(void)
     return (unsigned long int) pthread_self();
 }
 
+// Asynchronous preload of multiple nodes
 void preload_nodes(long long int node_idx, int num_nodes)
 {
     long long node_offset=(node_idx*ddfs->c_node_size) & (0-getpagesize());
@@ -359,11 +360,11 @@ void preload_nodes(long long int node_idx, int num_nodes)
     madvise(ddfs->nodes+node_offset, getpagesize() * numpages, MADV_WILLNEED);
 }
 
+// Synchronous preload of a single node
 void preload_node(long long int node_idx)
 {  // make a read in nodes to load the page, usually just before to lock the mutex
-    //volatile char ch=*(ddfs->nodes+(node_idx*ddfs->c_node_size));
-    //(void)ch;
-    preload_nodes(node_idx, 1);
+    volatile char ch=*(ddfs->nodes+(node_idx*ddfs->c_node_size));
+    (void)ch;
 }
 
 #define ddumb_get_fh(fi) ((struct ddumb_fh *)(uintptr_t)(fi)->fh)
