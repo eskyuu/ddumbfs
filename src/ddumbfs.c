@@ -34,6 +34,16 @@
 
 #define _GNU_SOURCE
 
+#define DO_SEQ_READAHEAD
+
+#ifdef DO_SEQ_READAHEAD
+#define READAHEAD_DETECT_BYTES	(1024*1024)	// Read-ahead is triggered when 1MB is read seqentially
+#define READAHEAD_DRIFT_BYTES	(1024*1024)	// Sequential reads are allowed to float within 1MB of 
+						// true sequential reads (reads do not always come in order
+						// from fuse)
+#define READAHEAD_BYTES		(10*1024*1024)	// Read-ahead 10MB at a time
+#endif
+
 #include <fuse.h>
 #include <ulockmgr.h>
 #include <stdio.h>
@@ -183,6 +193,13 @@ struct ddumb_fh
     int buf_firstwrite;     // when this "loaded" buffer has been written for the first time
 //    long long int buf_off;  // the offset of this buffer inside the file
     off_t buf_off;  // the offset of this buffer inside the file
+#ifdef DO_SEQ_READAHEAD
+    off_t next_seq_off;
+    int nbytes;
+    off_t seq_readahead_start_off;
+    off_t seq_readahead_end_off;
+    pthread_mutex_t readahead_lock;
+#endif
     pthread_mutex_t lock;
     int pool_status;
     pthread_cond_t pool_cond  ;
@@ -985,6 +1002,12 @@ struct ddumb_fh *ddumb_alloc_fh(struct fuse_file_info *fi, int fd, int rdonly, i
         fh->delayed_write_error_code=0;
         fh->zone.op='N';
         fh->zone.right='n';
+#ifdef DO_SEQ_READAHEAD
+	fh->next_seq_off=-1;
+	fh->nbytes=0;
+	fh->seq_readahead_start_off=-1;
+	fh->seq_readahead_end_off=-1;
+#endif
         fh->filename=strdup(filename); // don't care about the failure, just for friendly error message
         if (!special)
         {
@@ -1019,6 +1042,9 @@ struct ddumb_fh *ddumb_alloc_fh(struct fuse_file_info *fi, int fd, int rdonly, i
                 ddumb_statistic.fh_counter++;
                 pthread_mutex_init(&fh->lock, 0);
                 pthread_cond_init(&fh->pool_cond, NULL);
+#ifdef DO_SEQ_READAHEAD
+                pthread_mutex_init(&fh->readahead_lock, 0);
+#endif
 
                 DDFS_LOG_DEBUG("[%lu]pthread_mutex_init lock %p\n", thread_id(), (void*)&fh->lock);
             }
@@ -2419,6 +2445,59 @@ static int ddumb_read(const char *path, char *buf, size_t size, off_t offset, st
         xzone_unlock(fh);
 
         pthread_mutex_unlock_d(&fh->lock);
+
+#ifdef DO_SEQ_READAHEAD
+	// Only consider read-ahead if the read returned all data
+	if(res == size) {
+	    off_t last_readahead = offset + READAHEAD_BYTES;
+	    pthread_mutex_lock_d(&fh->readahead_lock);
+
+	    // Is this a sequential read
+	    if(llabs(fh->next_seq_off-offset) < READAHEAD_DRIFT_BYTES) {
+		fh->nbytes+=size;
+		if(fh->nbytes > READAHEAD_DETECT_BYTES) {
+		    //DDFS_LOG(LOG_NOTICE, "Sequential read detected: %d bytes\n", fh->nbytes);
+		    unsigned char baddr[ADDR_SIZE];
+
+		    while(fh->seq_readahead_end_off < last_readahead) {
+			if(fh->seq_readahead_end_off < 0) {
+				// First read-ahead - set the start and end to the boundary
+				fh->seq_readahead_start_off = fh->seq_readahead_end_off = (offset & ddfs->block_boundary_mask);
+			}
+			// read the address of the block in the block file
+			long long int idx_off=(fh->seq_readahead_end_off>>ddfs->block_size_shift)*ddfs->c_node_size+ddfs->c_file_header_size;
+			int len=pread(fh->fd, baddr, ddfs->c_addr_size, idx_off);
+			if (len==ddfs->c_addr_size) {
+			    long long int block_addr=ddfs_get_node_addr(baddr);
+			    fh->seq_readahead_end_off+=ddfs->c_block_size;
+			    if (block_addr!=0) {
+				long long int ra_offset=(block_addr<<ddfs->block_size_shift);
+				//DDFS_LOG(LOG_NOTICE, "Issuing read-ahead for %lld len %d\n", ra_offset, ddfs->c_block_size);
+				readahead(ddfs->bfile_ro, ra_offset, ddfs->c_block_size);
+			    }
+			} else {
+			    // Ignore errors
+			    if(len < 0) {
+				DDFS_LOG(LOG_WARNING, "Error reading from block file: %s\n", strerror(errno));
+			    }
+			    break;
+			}
+		    }
+		}
+	    } else {
+		if(fh->nbytes > READAHEAD_DETECT_BYTES) {
+		    DDFS_LOG(LOG_NOTICE, "End of sequential read after %d bytes (%jd != %jd) (Diff: %jd)\n", fh->nbytes, offset, fh->next_seq_off, fh->next_seq_off-offset);
+		}
+		fh->nbytes=0;
+		fh->seq_readahead_start_off=-1;
+		fh->seq_readahead_end_off=-1;
+	    }
+
+	    // Set the next sequential read offset
+	    fh->next_seq_off=offset+size;
+	    pthread_mutex_unlock_d(&fh->readahead_lock);
+	}
+#endif
     }
 
     return res;
@@ -2604,7 +2683,7 @@ static int ddumb_statfs(const char *path, struct statvfs *stbuf)
     res=statvfs(path+1, stbuf);
     if (res==-1) return -errno;
 
-    long long int s, u;
+    long long int u;
     pthread_mutex_lock_d(&ifile_mutex);
     //bit_array_count(&ddfs->ba_usedblocks, &s, &u);
     u = ddfs->ba_usedblocks.size - ddfs->usedblock;
