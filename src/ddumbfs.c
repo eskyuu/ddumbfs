@@ -2486,7 +2486,7 @@ static int ddumb_read(const char *path, char *buf, size_t size, off_t offset, st
 		}
 	    } else {
 		if(fh->nbytes > READAHEAD_DETECT_BYTES) {
-		    DDFS_LOG(LOG_NOTICE, "End of sequential read after %d bytes (%jd != %jd) (Diff: %jd)\n", fh->nbytes, offset, fh->next_seq_off, fh->next_seq_off-offset);
+		    //DDFS_LOG(LOG_INFO, "End of sequential read after %d bytes (%jd != %jd) (Diff: %jd)\n", fh->nbytes, offset, fh->next_seq_off, fh->next_seq_off-offset);
 		}
 		fh->nbytes=0;
 		fh->seq_readahead_start_off=-1;
