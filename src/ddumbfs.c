@@ -1208,9 +1208,6 @@ int ddumbfs_save_usedblocks(int limit)
         {
             used_block_saved=ddfs->usedblock;
             DDFS_LOG(LOG_INFO, "save used block list in %d seconds: %lld blocks in use\n", (int)(time(NULL)-start_time), ddfs->usedblock);
-
-	    // Mark the filesystem as clean
-	    ddfs_lock(".autofsck.clean");
         }
     }
 
@@ -2895,20 +2892,33 @@ void *ddumbfs_background(void *ptr)
         if (time(NULL)>next_sync)
         {
             pthread_mutex_lock_d(&ifile_mutex);
-	    // If no new blocks have been written, and the FS is not marked clean
 	    // Sync all data to the disk and mark as clean
-	    if(!ddfs->background_index_changed_flag && !ddfs_testlock(".autofsck.clean"))
+	    if(!ddfs->background_index_changed_flag)
 	    {
-		ddumbfs_save_usedblocks(0);
+		// If no new blocks have been written, check if the FS is already marked as clean
+		if(!ddfs_testlock(".autofsck.clean")) {
+		    // Sync the index first
+        	    fsync(ddfs->ifile);
+
+		    // Save the used blocks list
+		    ddumbfs_save_usedblocks(0);
+
+		    // Mark the filesystem as clean
+		    ddfs_lock(".autofsck.clean");
+		}
 	    }
 	    else
 	    {
 		// Clear the background change flag so we will run ddumbfs_save_usedblocks on the next run if no further changes have been made
 		ddfs->background_index_changed_flag=0;
 
+		// Sync the data blocks so all referenced blocks have the correct data
         	fsync(ddfs->bfile);
-		//ddfs_sync_index();
-        	fsync(ddfs->ifile);
+
+		// Wait until the filesystem is quiet before syncing the index
+		// because we need to re-build the whole thing if the filesystem is unclean
+        	//fsync(ddfs->ifile);
+
         	next_sync=time(NULL)+ddfs->c_auto_sync;
 	    }
             pthread_mutex_unlock_d(&ifile_mutex);
