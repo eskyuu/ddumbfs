@@ -68,6 +68,13 @@ long long int ddfs_fsck_repair_node_order(struct bit_array *wrong, int verbose)
     {
         unsigned char *node=ddfs->nodes+(node_idx*ddfs->c_node_size);
         unsigned char *hash=node+ddfs->c_addr_size;
+
+	// Preload nodes if needed
+	if (!ddfs->lock_index && !(node_idx % 1000) && (node_idx + 2000) < ddfs->c_node_count)
+	{
+	    ddfs_chk_preload_node(node_idx, 2000);
+	}
+
         blockaddr addr=ddfs_get_node_addr(node);
         if (addr==0)
         {
@@ -146,6 +153,13 @@ long long int ddfs_fsck_check_node_hash(struct bit_array *list, int verbose)
     {
         unsigned char *node=ddfs->nodes+(node_idx*ddfs->c_node_size);
         unsigned char *hash=node+ddfs->c_addr_size;
+
+	// Preload nodes if needed
+	if (!ddfs->lock_index && !(node_idx % 1000) && (node_idx + 2000) < ddfs->c_node_count)
+	{
+	    ddfs_chk_preload_node(node_idx, 2000);
+	}
+
         blockaddr addr=ddfs_get_node_addr(node);
         if (addr==0)
         {
@@ -275,6 +289,12 @@ long long int ddfs_fsck_node_accounting(struct bit_array *foundblocks, struct bi
 
     for (node_idx=0; node_idx<ddfs->c_node_count; node_idx++)
     {
+	// Preload nodes if needed
+	if (!ddfs->lock_index && !(node_idx % 1000) && (node_idx + 2000) < ddfs->c_node_count)
+	{
+	    ddfs_chk_preload_node(node_idx, 2000);
+	}
+
         addr=ddfs_get_node_addr(node);
         int err=0;
         if (addr!=0)
@@ -318,6 +338,12 @@ long long int ddfs_fsck_remove_useless_node(struct bit_array *keep)
 
     while (node_idx<ddfs->c_node_count)
     {
+	// Preload nodes if needed
+	if (!ddfs->lock_index && !(node_idx % 1000) && (node_idx + 2000) < ddfs->c_node_count)
+	{
+	    ddfs_chk_preload_node(node_idx, 2000);
+	}
+
         unsigned char *node=ddfs->nodes+(node_idx*ddfs->c_node_size);
         blockaddr addr=ddfs_get_node_addr(node);
         if (addr!=0 && !bit_array_get(keep, addr))
