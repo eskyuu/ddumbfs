@@ -3509,6 +3509,20 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+    if (!ddumb_param.parent || strcmp(ddumb_param.parent, args.argv[args.argc-2]) == 0) {
+        if (!ddumb_param.parent) {
+	    // Copy the argument to the parent
+	    ddumb_param.parent = args.argv[args.argc-2];
+	} else {
+	    // Free the unneeded argument
+	    free(args.argv[args.argc-2]);
+        }
+
+	// We always need to copy the last argument to the second last and decrement argc
+	args.argv[args.argc-2]=args.argv[args.argc-1];
+	args.argc--;
+    }
+
     if (!ddumb_param.parent) {
         fprintf(stderr, "ERROR: parent directory is missing\n");
         return 1;
