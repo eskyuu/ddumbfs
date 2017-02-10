@@ -929,11 +929,13 @@ int ddfs_save_usedblocks()
         return -errno;
     }
 
-    res=rename(filename1, filename0);
-    if (res==-1)
-    {
-        DDFS_LOG(LOG_ERR, "cannot rename %s in %s (%s)\n", filename1, filename0, strerror(errno));
-        return -errno;
+    if (pathexists(filename1)) {
+	res=rename(filename1, filename0);
+	if (res==-1)
+	{
+	    DDFS_LOG(LOG_ERR, "cannot rename %s in %s (%s)\n", filename1, filename0, strerror(errno));
+	    return -errno;
+	}
     }
 
     return 0;
