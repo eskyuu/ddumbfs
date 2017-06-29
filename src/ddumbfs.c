@@ -121,6 +121,7 @@ int ddumbfs_terminate=0;
 pthread_t ddumbfs_background_pthread;
 pthread_mutex_t ddumb_background_mutex=PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t ddumb_background_cond=PTHREAD_COND_INITIALIZER;
+pthread_t ddumbfs_lockindex_pthread;
 
 typedef struct ddumb_param
 {
@@ -2850,6 +2851,30 @@ static int ddumb_lock(const char *path, struct fuse_file_info *fi, int cmd, stru
     return res;
 }
 
+void *ddumbfs_lockindex(void *ptr)
+{
+    // Advise that the index is about to be read sequentially
+    madvise(ddfs->nodes, ddfs->c_node_block_count*ddfs->c_index_block_size, MADV_SEQUENTIAL);
+
+    int res1=mlock(ddfs->usedblocks_map, ddfs->c_node_offset-ddfs->c_freeblock_offset);
+    if (res1==-1) {
+        DDFS_LOG(LOG_ERR, "cannot lock used block into memory\n");
+    }
+    int res2=mlock(ddfs->nodes, ddfs->c_node_block_count*ddfs->c_index_block_size);
+    if (res2==-1) {
+        DDFS_LOG(LOG_ERR, "cannot lock index into memory\n");
+    }
+    if (res1==0 && res2==0)
+    {
+        DDFS_LOG(LOG_INFO, "index locked into memory: %.1fMo\n", (ddfs->c_node_block_count*ddfs->c_index_block_size+ddfs->c_node_offset-ddfs->c_freeblock_offset)/1024.0/1024.0);
+    }
+    else ddfs->lock_index=0;
+
+    // Set the index read mode as appropriate
+    madvise(ddfs->nodes, ddfs->c_node_block_count*ddfs->c_index_block_size, (ddfs->lock_index?MADV_NORMAL:MADV_RANDOM));
+
+    pthread_exit(NULL);
+}
 
 void *ddumbfs_background(void *ptr)
 {
@@ -3175,23 +3200,9 @@ static void* ddumb_init(struct fuse_conn_info *conn)
     // reset all stats to 0
     memset(&ddumb_statistic, 0x00, sizeof(struct ddumb_statistic));
 
-
+    // lock index component into memory if needed
     if (ddfs->lock_index)
-    {  // lock index component into memory
-        int res1=mlock(ddfs->usedblocks_map, ddfs->c_node_offset-ddfs->c_freeblock_offset);
-        if (res1==-1) {
-            DDFS_LOG(LOG_ERR, "cannot lock used block into memory\n");
-        }
-        int res2=mlock(ddfs->nodes, ddfs->c_node_block_count*ddfs->c_index_block_size);
-        if (res2==-1) {
-            DDFS_LOG(LOG_ERR, "cannot lock index into memory\n");
-        }
-        if (res1==0 && res2==0)
-        {
-            DDFS_LOG(LOG_INFO, "index locked into memory: %.1fMo\n", (ddfs->c_node_block_count*ddfs->c_index_block_size+ddfs->c_node_offset-ddfs->c_freeblock_offset)/1024.0/1024.0);
-        }
-        else ddfs->lock_index=0;
-    }
+        pthread_create(&ddumbfs_lockindex_pthread, NULL, ddumbfs_lockindex, NULL);
 
     DDFS_LOG(LOG_INFO, "[%d] filesystem %s mounted\n", (int)getpid(), ddumb_param.parent);
     L_SYS(LOG_INFO, "[%d] filesystem %s mounted\n", (int)getpid(), ddumb_param.parent);
@@ -3235,6 +3246,10 @@ static void ddumb_destroy(void* nothing)
     pthread_mutex_unlock_d(&ddumb_background_mutex);
 
     pthread_join(ddumbfs_background_pthread, NULL);
+
+    // wait for index lock thread if needed
+    if (ddfs->lock_index)
+        pthread_join(ddumbfs_lockindex_pthread, NULL);
 #ifdef SOCKET_INTERFACE
     int s, len;
     struct sockaddr_un remote;
